@@ -1,0 +1,605 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Signal Radar</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root {
+    --bg: #0d0d10;
+    --panel: rgba(22, 22, 27, 0.88);
+    --border: rgba(255, 255, 255, 0.10);
+    --ink: #ffffff;
+    --ink-2: #c3c2b7;
+    --ink-3: #898781;
+    --grid: #2c2c2a;
+    --wifi24: #3987e5;
+    --wifi5: #199e70;
+    --wifi6: #c98500;
+    --ble: #9085e9;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; overflow: hidden; }
+  body {
+    background: var(--bg); color: var(--ink);
+    font: 13px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  #scene { position: fixed; inset: 0; }
+
+  header {
+    position: fixed; top: 0; left: 0; right: 0; z-index: 10;
+    display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+    padding: 10px 16px;
+    background: linear-gradient(rgba(13,13,16,.92), rgba(13,13,16,0));
+    pointer-events: none;
+  }
+  header > * { pointer-events: auto; }
+  h1 { font-size: 15px; font-weight: 650; letter-spacing: .2px; }
+  h1 span { color: var(--ink-3); font-weight: 400; margin-left: 8px; font-size: 12px; }
+  .legend { display: flex; gap: 6px; flex-wrap: wrap; }
+  .chip {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 3px 10px; border: 1px solid var(--border); border-radius: 99px;
+    background: var(--panel); color: var(--ink-2); font-size: 12px;
+    cursor: pointer; user-select: none;
+  }
+  .chip:hover { border-color: rgba(255,255,255,.28); }
+  .chip.off { opacity: .35; }
+  .chip.off .dot { background: var(--ink-3) !important; }
+  .chip .dot { width: 8px; height: 8px; border-radius: 50%; }
+  .chip b { color: var(--ink); font-weight: 600; }
+  #hint {
+    font-size: 12px; color: var(--ink-2); background: var(--panel);
+    border: 1px solid var(--border); border-radius: 8px; padding: 4px 10px;
+    display: none; max-width: 480px;
+  }
+
+  #list {
+    position: fixed; top: 54px; right: 12px; bottom: 196px; width: 292px; z-index: 9;
+    background: var(--panel); border: 1px solid var(--border); border-radius: 12px;
+    backdrop-filter: blur(12px); display: flex; flex-direction: column; overflow: hidden;
+  }
+  #list h2 {
+    font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .8px;
+    color: var(--ink-3); padding: 10px 12px 6px;
+  }
+  #rows { overflow-y: auto; padding: 0 6px 8px; }
+  .row {
+    display: grid; grid-template-columns: 10px 1fr 58px; gap: 8px; align-items: center;
+    padding: 5px 8px; border-radius: 8px; cursor: default;
+  }
+  .row:hover { background: rgba(255,255,255,.06); }
+  .row .dot { width: 8px; height: 8px; border-radius: 50%; }
+  .row .name { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  .row .name small { display: block; color: var(--ink-3); font-size: 11px; }
+  .row .val { text-align: right; }
+  .row .val b { font-weight: 600; font-variant-numeric: tabular-nums; }
+  .row .bar { height: 3px; border-radius: 2px; background: rgba(255,255,255,.10); margin-top: 3px; overflow: hidden; }
+  .row .bar i { display: block; height: 100%; border-radius: 2px; }
+  .row.stale { opacity: .38; }
+
+  #spectrum-wrap {
+    position: fixed; left: 12px; right: 12px; bottom: 12px; height: 176px; z-index: 9;
+    background: var(--panel); border: 1px solid var(--border); border-radius: 12px;
+    backdrop-filter: blur(12px); padding: 8px 12px 6px;
+  }
+  #spectrum-wrap h2 {
+    font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .8px;
+    color: var(--ink-3); display: flex; justify-content: space-between;
+  }
+  #spectrum-wrap h2 em { font-style: normal; font-weight: 400; text-transform: none; letter-spacing: 0; }
+  #spectrum { width: 100%; height: 138px; display: block; }
+
+  .label3d {
+    position: fixed; z-index: 5; pointer-events: none; transform: translate(-50%, -130%);
+    font-size: 11px; color: var(--ink-2); white-space: nowrap;
+    text-shadow: 0 1px 4px rgba(0,0,0,.9), 0 0 2px rgba(0,0,0,.9);
+  }
+  .label3d b { color: var(--ink); font-weight: 600; }
+
+  #tooltip {
+    position: fixed; z-index: 20; pointer-events: none; display: none;
+    background: rgba(15,15,19,.96); border: 1px solid var(--border); border-radius: 10px;
+    padding: 8px 11px; font-size: 12px; max-width: 280px; color: var(--ink-2);
+    box-shadow: 0 6px 24px rgba(0,0,0,.5);
+  }
+  #tooltip .t { color: var(--ink); font-weight: 600; margin-bottom: 2px; }
+  #tooltip .kv { display: flex; justify-content: space-between; gap: 16px; }
+  #tooltip .kv span:last-child { color: var(--ink); font-variant-numeric: tabular-nums; }
+
+  @media (max-width: 900px) { #list { display: none; } }
+</style>
+</head>
+<body>
+<canvas id="scene"></canvas>
+
+<header>
+  <h1>Signal Radar <span>live RF environment around this Mac</span></h1>
+  <div class="legend" id="legend"></div>
+  <div id="hint"></div>
+</header>
+
+<aside id="list">
+  <h2>Signals by strength</h2>
+  <div id="rows"></div>
+</aside>
+
+<div id="spectrum-wrap">
+  <h2>Wi-Fi spectrum <em id="spec-note">signal level by channel · 2.4 / 5 / 6 GHz (BLE hops across 2.4 GHz and is shown in 3D only)</em></h2>
+  <canvas id="spectrum"></canvas>
+</div>
+
+<div id="tooltip"></div>
+
+<script type="importmap">
+{ "imports": { "three": "./three.module.js",
+               "three/addons/controls/OrbitControls.js": "./OrbitControls.js" } }
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+const COLORS = { '2.4': '#3987e5', '5': '#199e70', '6': '#c98500', ble: '#9085e9', bt: '#d55181' };
+const BAND_LABEL = { '2.4': 'Wi-Fi 2.4 GHz', '5': 'Wi-Fi 5 GHz', '6': 'Wi-Fi 6 GHz',
+                     ble: 'Bluetooth LE', bt: 'BT Classic' };
+const TYPE_KEYS = ['2.4', '5', '6', 'ble', 'bt'];
+const typeKey = sig => sig.kind === 'wifi' ? sig.band : sig.kind;
+const enabled = new Set(JSON.parse(localStorage.getItem('sr-enabled') || 'null') || TYPE_KEYS);
+const isOn = sig => enabled.has(typeKey(sig));
+
+// ---------- helpers ----------
+const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+// RSSI -> ring radius: -35 dBm hugs the center, -95 dBm at the rim
+const radiusFor = r => 1.6 + clamp((-r - 35) / 60, 0, 1) * 9.2;
+// frequency -> height shelf per band
+function heightFor(sig) {
+  if (sig.kind === 'ble') return 0.75;
+  if (sig.kind === 'bt') return 1.1;
+  const f = sig.freq_mhz || 2440;
+  if (f < 2500) return 1.7 + (f - 2400) / 100 * 0.7;
+  if (f < 5900) return 3.2 + (f - 5150) / 710 * 1.0;
+  return 5.0 + (f - 5925) / 1205 * 1.1;
+}
+function hashAngle(id) { // stable pseudo-angle per device
+  let h = 2166136261;
+  for (let i = 0; i < id.length; i++) { h ^= id.charCodeAt(i); h = Math.imul(h, 16777619); }
+  return ((h >>> 0) % 3600) / 3600 * Math.PI * 2;
+}
+function displayName(sig) {
+  if (sig.kind === 'wifi') return sig.ssid || `Hidden network`;
+  if (sig.kind === 'bt') return sig.name || 'Bluetooth device';
+  return sig.name || sig.company || 'BLE device';
+}
+function colorOf(sig) { return COLORS[typeKey(sig)] || '#898781'; }
+const ago = t => `${Math.max(0, Math.round(Date.now() / 1000 - t))}s ago`;
+
+// ---------- three.js scene ----------
+const canvas = document.getElementById('scene');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+const scene = new THREE.Scene();
+scene.background = new THREE.Color('#0d0d10');
+scene.fog = new THREE.Fog('#0d0d10', 24, 46);
+const camera = new THREE.PerspectiveCamera(55, 1, 0.1, 200);
+camera.position.set(10, 9, 14);
+const controls = new OrbitControls(camera, canvas);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.maxPolarAngle = Math.PI * 0.49;
+controls.minDistance = 4; controls.maxDistance = 40;
+controls.autoRotate = true; controls.autoRotateSpeed = 0.45;
+controls.addEventListener('start', () => controls.autoRotate = false);
+controls.target.set(0, 1.6, 0);
+
+function makeGlowTexture(hex) {
+  const c = document.createElement('canvas'); c.width = c.height = 128;
+  const ctx = c.getContext('2d');
+  const g = ctx.createRadialGradient(64, 64, 0, 64, 64, 64);
+  g.addColorStop(0, hex + 'ff'); g.addColorStop(0.35, hex + '55'); g.addColorStop(1, hex + '00');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, 128, 128);
+  return new THREE.CanvasTexture(c);
+}
+const glowTex = {};
+function makeGlowSprite(hex) {
+  glowTex[hex] ||= makeGlowTexture(hex);
+  return new THREE.Sprite(new THREE.SpriteMaterial({
+    map: glowTex[hex], blending: THREE.AdditiveBlending, depthWrite: false, transparent: true }));
+}
+function makeTextSprite(text, color, px, div = 90) {
+  const c = document.createElement('canvas');
+  const ctx = c.getContext('2d');
+  ctx.font = `500 ${px}px system-ui, sans-serif`;
+  c.width = Math.ceil(ctx.measureText(text).width) + 16; c.height = px + 16;
+  const ctx2 = c.getContext('2d');
+  ctx2.font = `500 ${px}px system-ui, sans-serif`;
+  ctx2.fillStyle = color; ctx2.textBaseline = 'middle';
+  ctx2.fillText(text, 8, c.height / 2);
+  const sp = new THREE.Sprite(new THREE.SpriteMaterial({
+    map: new THREE.CanvasTexture(c), transparent: true, depthWrite: false }));
+  sp.scale.set(c.width / div, c.height / div, 1);
+  return sp;
+}
+
+// ground: radar rings labelled in dBm
+const ringGroup = new THREE.Group();
+scene.add(ringGroup);
+const ringMat = new THREE.LineBasicMaterial({ color: '#2c2c2a' });
+const ringMatBold = new THREE.LineBasicMaterial({ color: '#45453f' });
+for (const dbm of [-40, -50, -60, -70, -80, -90]) {
+  const r = radiusFor(dbm);
+  const pts = [];
+  for (let i = 0; i <= 128; i++) {
+    const a = i / 128 * Math.PI * 2;
+    pts.push(new THREE.Vector3(Math.cos(a) * r, 0, Math.sin(a) * r));
+  }
+  const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts),
+                              dbm === -70 ? ringMatBold : ringMat);
+  ringGroup.add(line);
+  ringGroup.add(makeTextSprite(`${dbm} dBm`, '#898781', 42, 220)
+    .translateX(r * 0.7071).translateZ(r * 0.7071).translateY(0.02));
+}
+// radial spokes
+for (let i = 0; i < 12; i++) {
+  const a = i / 12 * Math.PI * 2, r0 = radiusFor(-40), r1 = radiusFor(-92);
+  const g = new THREE.BufferGeometry().setFromPoints([
+    new THREE.Vector3(Math.cos(a) * r0, 0, Math.sin(a) * r0),
+    new THREE.Vector3(Math.cos(a) * r1, 0, Math.sin(a) * r1)]);
+  const m = new THREE.LineBasicMaterial({ color: '#1e1e21' });
+  ringGroup.add(new THREE.Line(g, m));
+}
+// band altitude guides on the frequency axis
+for (const [band, y] of [['2.4 GHz', 2.0], ['5 GHz', 3.7], ['6 GHz', 5.5]]) {
+  const s = makeTextSprite(band, '#52514e', 46, 130);
+  s.position.set(-radiusFor(-92) - 0.8, y, 0);
+  ringGroup.add(s);
+}
+
+// center marker = this Mac
+const mac = new THREE.Group();
+mac.add(new THREE.Mesh(new THREE.ConeGeometry(0.22, 0.5, 24),
+        new THREE.MeshBasicMaterial({ color: '#ffffff' })));
+mac.children[0].position.y = 0.25;
+const macGlow = makeGlowSprite('#ffffff'); macGlow.scale.setScalar(1.6); macGlow.position.y = 0.3;
+mac.add(macGlow);
+mac.add(makeTextSprite('you', '#c3c2b7', 44, 140).translateY(0.95));
+scene.add(mac);
+
+// ---------- signal nodes ----------
+const nodes = new Map();   // id -> {group, sphere, glow, stem, base, sig, target:{r,y,angle}}
+const sphereGeo = new THREE.SphereGeometry(1, 20, 14);
+const baseGeo = new THREE.CircleGeometry(0.09, 16);
+
+function makeNode(sig) {
+  const color = colorOf(sig);
+  const group = new THREE.Group();
+  const sphere = new THREE.Mesh(sphereGeo, new THREE.MeshBasicMaterial({ color }));
+  const glow = makeGlowSprite(color);
+  const base = new THREE.Mesh(baseGeo, new THREE.MeshBasicMaterial({
+    color, transparent: true, opacity: 0.5, side: THREE.DoubleSide }));
+  base.rotation.x = -Math.PI / 2; base.position.y = 0.01;
+  const stemMat = new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.32 });
+  const stem = new THREE.Line(new THREE.BufferGeometry().setFromPoints(
+    [new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, 1, 0)]), stemMat);
+  group.add(sphere, glow, base, stem);
+  scene.add(group);
+  const node = { group, sphere, glow, base, stem, sig, angle: hashAngle(sig.id), pulse: 0, cur: null };
+  sphere.userData.node = node;
+  nodes.set(sig.id, node);
+  return node;
+}
+
+function updateNode(node, sig) {
+  const prev = node.sig.rssi;
+  node.sig = sig;
+  if (prev !== sig.rssi) node.pulse = 1;
+}
+
+function layoutNode(node, dt) {
+  const sig = node.sig;
+  const r = radiusFor(sig.rssi), y = heightFor(sig), a = node.angle;
+  const tx = Math.cos(a) * r, tz = Math.sin(a) * r;
+  if (!node.cur) node.cur = { x: tx, y, z: tz };
+  const k = 1 - Math.exp(-dt * 3);
+  node.cur.x += (tx - node.cur.x) * k;
+  node.cur.y += (y - node.cur.y) * k;
+  node.cur.z += (tz - node.cur.z) * k;
+  const { x, z } = node.cur, cy = node.cur.y;
+  node.group.position.set(x, 0, z);
+  const s = 0.10 + clamp((sig.rssi + 95) / 60, 0, 1) * 0.17;
+  node.sphere.position.y = cy; node.sphere.scale.setScalar(s);
+  node.pulse = Math.max(0, node.pulse - dt * 1.4);
+  node.glow.position.y = cy;
+  node.glow.scale.setScalar(s * (6.5 + node.pulse * 5));
+  node.stem.scale.y = cy;
+  const op = sig.stale ? 0.22 : 1;
+  node.sphere.material.opacity = op; node.sphere.material.transparent = sig.stale;
+  node.glow.material.opacity = sig.stale ? 0.15 : 0.85;
+  node.base.material.opacity = sig.stale ? 0.1 : 0.45;
+  node.stem.material.opacity = sig.stale ? 0.08 : 0.3;
+}
+
+// ---------- HTML labels for strongest signals ----------
+const labelPool = new Map();
+const v3 = new THREE.Vector3();
+function updateLabels(signals) {
+  const want = signals.filter(s => !s.stale && isOn(s))
+    .sort((a, b) => b.rssi - a.rssi).slice(0, 12);
+  const wantIds = new Set(want.map(s => s.id));
+  for (const [id, el] of labelPool) if (!wantIds.has(id)) { el.remove(); labelPool.delete(id); }
+  for (const s of want) {
+    if (!labelPool.has(s.id)) {
+      const el = document.createElement('div');
+      el.className = 'label3d';
+      document.body.appendChild(el);
+      labelPool.set(s.id, el);
+    }
+    labelPool.get(s.id).innerHTML =
+      `<b>${escapeHtml(displayName(s))}</b> ${s.rssi} dBm`;
+  }
+}
+function projectLabels() {
+  for (const [id, el] of labelPool) {
+    const node = nodes.get(id);
+    if (!node || !node.cur) { el.style.display = 'none'; continue; }
+    v3.set(node.cur.x, node.cur.y + 0.25, node.cur.z).project(camera);
+    if (v3.z > 1) { el.style.display = 'none'; continue; }
+    el.style.display = 'block';
+    el.style.left = (v3.x * 0.5 + 0.5) * innerWidth + 'px';
+    el.style.top = (-v3.y * 0.5 + 0.5) * innerHeight + 'px';
+  }
+}
+const escapeHtml = s => s.replace(/[&<>"]/g,
+  c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+// ---------- tooltip + hover picking ----------
+const tooltip = document.getElementById('tooltip');
+const raycaster = new THREE.Raycaster();
+raycaster.params.Points = {};
+const mouse = new THREE.Vector2(-2, -2);
+let hoverNode = null;
+canvas.addEventListener('pointermove', e => {
+  mouse.set(e.clientX / innerWidth * 2 - 1, -(e.clientY / innerHeight) * 2 + 1);
+  tooltip.style.left = Math.min(e.clientX + 14, innerWidth - 290) + 'px';
+  tooltip.style.top = e.clientY + 14 + 'px';
+});
+canvas.addEventListener('pointerleave', () => { mouse.set(-2, -2); });
+
+function pick() {
+  raycaster.setFromCamera(mouse, camera);
+  raycaster.params.Line.threshold = 0;
+  const spheres = [...nodes.values()].filter(n => n.group.visible).map(n => n.sphere);
+  const hit = raycaster.intersectObjects(spheres, false)[0];
+  const node = hit ? hit.object.userData.node : null;
+  if (node !== hoverNode) {
+    hoverNode = node;
+    if (!node) { tooltip.style.display = 'none'; return; }
+    const s = node.sig;
+    let rows;
+    if (s.kind === 'wifi') {
+      rows = [['Signal', `${s.rssi} dBm`],
+              ['Channel', `${s.channel} (${s.band} GHz, ${s.width_mhz} MHz)`],
+              ['Frequency', `${s.freq_mhz} MHz`],
+              ['Security', s.security || '—'],
+              s.bssid ? ['BSSID', s.bssid] : null,
+              ['Seen', ago(s.last_seen)]];
+    } else if (s.kind === 'bt') {
+      rows = [['Signal', s.rssi_valid ? `${s.rssi} dBm` : 'connected (level n/a)'],
+              ['Address', s.address],
+              ['Seen', ago(s.last_seen)]];
+    } else {
+      rows = [['Signal', `${s.rssi} dBm`],
+              s.company ? ['Maker', s.company] : null,
+              s.tx_power != null ? ['TX power', `${s.tx_power} dBm`] : null,
+              ['Address', s.id.slice(0, 17)],
+              ['Seen', ago(s.last_seen)]];
+    }
+    tooltip.innerHTML = `<div class="t" style="color:${colorOf(s)}">${escapeHtml(displayName(s))}</div>
+      <div class="kv"><span>Type</span><span>${BAND_LABEL[typeKey(s)] || 'Wi-Fi'}</span></div>` +
+      rows.filter(Boolean).map(([k, v]) =>
+        `<div class="kv"><span>${k}</span><span>${escapeHtml(String(v))}</span></div>`).join('');
+    tooltip.style.display = 'block';
+  }
+}
+
+// ---------- side list ----------
+const rowsEl = document.getElementById('rows');
+function renderList(signals) {
+  const sorted = signals.filter(isOn)
+    .sort((a, b) => (a.stale - b.stale) || (b.rssi - a.rssi));
+  rowsEl.innerHTML = sorted.map(s => {
+    const c = colorOf(s), pct = clamp((s.rssi + 95) / 65, 0.03, 1) * 100;
+    const meta = s.kind === 'wifi'
+      ? `ch ${s.channel} · ${s.band} GHz${s.security ? ' · ' + s.security : ''}`
+      : s.kind === 'bt' ? 'BT Classic · connected'
+      : `BLE${s.company ? ' · ' + s.company : ''}`;
+    const val = (s.kind === 'bt' && !s.rssi_valid) ? '–' : s.rssi;
+    return `<div class="row${s.stale ? ' stale' : ''}" data-id="${escapeHtml(s.id)}">
+      <span class="dot" style="background:${c}"></span>
+      <span class="name">${escapeHtml(displayName(s))}<small>${escapeHtml(meta)}</small></span>
+      <span class="val"><b>${val}</b> <small style="color:var(--ink-3)">dBm</small>
+        <span class="bar"><i style="width:${pct}%;background:${c}"></i></span></span>
+    </div>`;
+  }).join('');
+}
+rowsEl.addEventListener('pointerover', e => {
+  const row = e.target.closest('.row');
+  highlightId = row ? row.dataset.id : null;
+});
+rowsEl.addEventListener('pointerleave', () => highlightId = null);
+let highlightId = null;
+
+// ---------- legend toggles + hint ----------
+function renderLegend(signals, status) {
+  const counts = {};
+  for (const s of signals) if (!s.stale) counts[typeKey(s)] = (counts[typeKey(s)] || 0) + 1;
+  document.getElementById('legend').innerHTML =
+    TYPE_KEYS.map(k =>
+      `<span class="chip${enabled.has(k) ? '' : ' off'}" data-key="${k}" role="switch"
+             aria-checked="${enabled.has(k)}" title="Click to toggle">
+         <span class="dot" style="background:${COLORS[k]}"></span>${BAND_LABEL[k]} <b>${counts[k] || 0}</b></span>`
+    ).join('');
+  const hint = document.getElementById('hint');
+  const msgs = [];
+  const hasWifi = signals.some(s => s.kind === 'wifi');
+  if (!status.ssids_visible && hasWifi) {
+    msgs.push(status.location_auth === 'denied'
+      ? 'Network names hidden: Location access is denied for your terminal — enable it under System Settings → Privacy & Security → Location Services, then restart the server.'
+      : 'Network names hidden: macOS shows SSIDs only with Location permission. Start the server from your own terminal (./run.sh) and click "Allow" on the location prompt.');
+  }
+  if (!status.ble_running)
+    msgs.push('Bluetooth scan not running — grant Bluetooth access to your terminal, then restart.');
+  for (const e of status.errors || []) {
+    // transient scan hiccups aren't worth a banner while data is flowing
+    if (e.includes('Wi-Fi') && hasWifi) continue;
+    msgs.push(e);
+  }
+  hint.textContent = msgs.join(' ');
+  hint.style.display = msgs.length ? 'block' : 'none';
+}
+document.getElementById('legend').addEventListener('click', e => {
+  const chip = e.target.closest('.chip');
+  if (!chip) return;
+  const k = chip.dataset.key;
+  enabled.has(k) ? enabled.delete(k) : enabled.add(k);
+  localStorage.setItem('sr-enabled', JSON.stringify([...enabled]));
+  refreshViews();
+});
+function refreshViews() {
+  for (const node of nodes.values()) node.group.visible = isOn(node.sig);
+  renderList(allSignals);
+  renderLegend(allSignals, lastStatus);
+  updateLabels(allSignals);
+  drawSpectrum(allSignals);
+}
+
+// ---------- spectrum strip ----------
+const spec = document.getElementById('spectrum');
+const sctx = spec.getContext('2d');
+const SEGMENTS = [                       // [f0, f1, x-fraction]
+  { f0: 2398, f1: 2496, w: 0.24, name: '2.4 GHz' },
+  { f0: 5150, f1: 5870, w: 0.40, name: '5 GHz' },
+  { f0: 5925, f1: 7130, w: 0.36, name: '6 GHz' },
+];
+const DB_TOP = -30, DB_BOT = -100;
+function freqToX(f, W) {
+  const GAP = 18; let x = 0;
+  const usable = W - GAP * (SEGMENTS.length - 1);
+  for (const seg of SEGMENTS) {
+    const w = usable * seg.w;
+    if (f >= seg.f0 && f <= seg.f1) return x + (f - seg.f0) / (seg.f1 - seg.f0) * w;
+    x += w + GAP;
+  }
+  return null;
+}
+function drawSpectrum(signals) {
+  const dpr = Math.min(devicePixelRatio, 2);
+  const W = spec.clientWidth, H = spec.clientHeight;
+  if (spec.width !== W * dpr) { spec.width = W * dpr; spec.height = H * dpr; }
+  sctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  sctx.clearRect(0, 0, W, H);
+  const padL = 34, padB = 16, padT = 6;
+  const plotW = W - padL - 4, plotH = H - padT - padB;
+  const yFor = db => padT + (DB_TOP - db) / (DB_TOP - DB_BOT) * plotH;
+  // grid
+  sctx.strokeStyle = '#2c2c2a'; sctx.fillStyle = '#898781';
+  sctx.font = '10px system-ui'; sctx.textAlign = 'right'; sctx.lineWidth = 1;
+  for (let db = -40; db >= -90; db -= 10) {
+    const y = yFor(db);
+    sctx.beginPath(); sctx.moveTo(padL, y); sctx.lineTo(W - 4, y); sctx.stroke();
+    sctx.fillText(db, padL - 6, y + 3);
+  }
+  // segment baselines + names
+  const GAP = 18, usable = plotW - GAP * (SEGMENTS.length - 1);
+  let x0 = padL;
+  sctx.textAlign = 'left';
+  for (const seg of SEGMENTS) {
+    const w = usable * seg.w;
+    sctx.strokeStyle = '#383835';
+    sctx.beginPath(); sctx.moveTo(x0, yFor(DB_BOT)); sctx.lineTo(x0 + w, yFor(DB_BOT)); sctx.stroke();
+    sctx.fillStyle = '#898781';
+    sctx.fillText(seg.name, x0, H - 3);
+    seg._x = x0; seg._w = w;
+    x0 += w + GAP;
+  }
+  // network bumps; direct-label only the 3 strongest per band to avoid pile-ups
+  const wifi = signals.filter(s => s.kind === 'wifi' && s.freq_mhz && !s.stale && isOn(s));
+  const labeled = new Set();
+  for (const seg of SEGMENTS) {
+    wifi.filter(s => s.freq_mhz >= seg.f0 && s.freq_mhz <= seg.f1 && s.ssid)
+      .sort((a, b) => b.rssi - a.rssi).slice(0, 3)
+      .forEach(s => labeled.add(s.id));
+  }
+  for (const s of wifi.sort((a, b) => a.rssi - b.rssi)) {
+    const seg = SEGMENTS.find(g => s.freq_mhz >= g.f0 && s.freq_mhz <= g.f1);
+    if (!seg) continue;
+    const fx = f => seg._x + (clamp(f, seg.f0, seg.f1) - seg.f0) / (seg.f1 - seg.f0) * seg._w;
+    const half = s.width_mhz / 2;
+    const xL = fx(s.freq_mhz - half), xC = fx(s.freq_mhz), xR = fx(s.freq_mhz + half);
+    const yP = yFor(s.rssi), yB = yFor(DB_BOT);
+    const c = colorOf(s);
+    sctx.beginPath();
+    sctx.moveTo(xL, yB);
+    sctx.bezierCurveTo(xL + (xC - xL) * .55, yB, xL + (xC - xL) * .45, yP, xC, yP);
+    sctx.bezierCurveTo(xC + (xR - xC) * .55, yP, xC + (xR - xC) * .45, yB, xR, yB);
+    sctx.closePath();
+    sctx.fillStyle = c + '2e'; sctx.fill();
+    sctx.strokeStyle = c; sctx.lineWidth = 1.5; sctx.stroke();
+    if (labeled.has(s.id)) {
+      sctx.fillStyle = '#c3c2b7'; sctx.textAlign = 'center'; sctx.font = '10px system-ui';
+      sctx.fillText(s.ssid.slice(0, 18), xC, yP - 5);
+      sctx.textAlign = 'left';
+    }
+  }
+}
+
+// ---------- data polling ----------
+let allSignals = [];
+let lastStatus = {};
+async function poll() {
+  try {
+    const res = await fetch('/api/signals');
+    const data = await res.json();
+    document.title = `Signal Radar · ${data.wifi.length + data.ble.length + (data.bt || []).length} signals`;
+    allSignals = [...data.wifi, ...data.ble, ...(data.bt || [])];
+    lastStatus = data.status;
+    const seen = new Set();
+    for (const sig of allSignals) {
+      seen.add(sig.id);
+      const node = nodes.get(sig.id);
+      node ? updateNode(node, sig) : makeNode(sig);
+    }
+    for (const [id, node] of nodes) {
+      if (!seen.has(id)) { scene.remove(node.group); nodes.delete(id); }
+    }
+    refreshViews();
+  } catch (e) { console.error('poll failed:', e); /* server restarting; retry next tick */ }
+}
+poll();
+setInterval(poll, 2500);
+
+// ---------- render loop ----------
+function resize() {
+  renderer.setSize(innerWidth, innerHeight);
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+}
+addEventListener('resize', resize); resize();
+
+let last = performance.now();
+function tick(now) {
+  const dt = Math.min(0.1, (now - last) / 1000); last = now;
+  for (const node of nodes.values()) {
+    layoutNode(node, dt);
+    const hl = (highlightId && node.sig.id === highlightId) || node === hoverNode;
+    if (hl) node.glow.scale.multiplyScalar(1.8);
+  }
+  controls.update();
+  pick();
+  projectLabels();
+  renderer.render(scene, camera);
+  requestAnimationFrame(tick);
+}
+requestAnimationFrame(tick);
+</script>
+</body>
+</html>
